@@ -102,7 +102,7 @@ public class CurrencyBalancer {
 			// First convert to BTC, then convert back
 			double totalValueInBTC = getTotalValue("BTC");
 			// find the conversion from that currency from bitcoin
-			if (baseCurrency == "USD") {
+			if (baseCurrency.equalsIgnoreCase("USD")) {
 				baseCurrency = "USDT";
 			}
 			final String correctedBaseCurrency = baseCurrency;
@@ -120,7 +120,9 @@ public class CurrencyBalancer {
 		this.currentPriceData = accountServices.getData();
 
 		double totalValue = 0;
-		for (OwnedAsset asset : ownedAssets) {
+		// Only do the ones we want to manage
+		for (HoldingRatio ratio : desiredHoldingRatios) {
+			OwnedAsset asset = getOwnedAsset(ratio.getTicker());
 			totalValue += getValueOwned(asset, baseCurrency);
 		}
 		return totalValue;
@@ -165,10 +167,10 @@ public class CurrencyBalancer {
 		String baseCurrency = "BTC";
 		double totalValueOwned = getTotalValue(baseCurrency);
 		Map<String, Double> adjustments = new HashMap<>();
-		for (OwnedAsset asset : ownedAssets) {
+		for (HoldingRatio ratio : desiredHoldingRatios) {
 			double desiredRatio = 0.0;
 			double currentPrice = 0.0;
-			HoldingRatio ratio = getHoldingRatio(asset.getAsset());
+			OwnedAsset asset = getOwnedAsset(ratio.getTicker());
 			if (ratio == null) {
 				continue;
 			}
@@ -196,19 +198,19 @@ public class CurrencyBalancer {
 		return adjustments;
 	}
 
-	private HoldingRatio getHoldingRatio(String ticker) {
+	public HoldingRatio getHoldingRatio(String ticker) {
 		return desiredHoldingRatios.stream()
 				.filter(c -> c.getTicker().equalsIgnoreCase(ticker))
 				.findFirst().orElse(null);
 	}
 
-	private PriceData getPriceData(String ticker, String baseCurrency) {
+	public PriceData getPriceData(String ticker, String baseCurrency) {
 		return currentPriceData.stream()
 				.filter(c -> c.getTicker().equalsIgnoreCase(ticker + baseCurrency))
 				.findFirst().orElse(null);
 	}
 
-	private OwnedAsset getOwnedAsset(String ticker) {
+	public OwnedAsset getOwnedAsset(String ticker) {
 		return ownedAssets.stream()
 				.filter(c -> c.getAsset().equalsIgnoreCase(ticker))
 				.findFirst().orElse(null);
@@ -217,10 +219,10 @@ public class CurrencyBalancer {
 	public double getDriftPercent() {
 		double totalPercentDifference = 0;
 		Map<String, Double> adjustments = getAdjustments();
-		for (OwnedAsset asset : ownedAssets) {
+		for (HoldingRatio ratio : desiredHoldingRatios) {
+			OwnedAsset asset = getOwnedAsset(ratio.getTicker());
 			Double adjustment = adjustments.get(asset.getAsset());
 			if (adjustment != null) {
-				HoldingRatio ratio = getHoldingRatio(asset.getAsset());
 				// Negative and positive shouldn't count against each other
 				double thisPercentDifference = Math.abs(adjustment) / (asset.getFree() + asset.getLocked());
 				// Weight this relative to all desired holdings
@@ -232,7 +234,8 @@ public class CurrencyBalancer {
 
 	public boolean ifMaxDriftExceededOnAnyCurrency(double driftPercent) {
 		Map<String, Double> adjustments = getAdjustments();
-		for (OwnedAsset asset : ownedAssets) {
+		for (HoldingRatio ratio : desiredHoldingRatios) {
+			OwnedAsset asset = getOwnedAsset(ratio.getTicker());
 			Double adjustment = adjustments.get(asset.getAsset());
 			if (adjustment != null) {
 				// Negative and positive shouldn't count against each other

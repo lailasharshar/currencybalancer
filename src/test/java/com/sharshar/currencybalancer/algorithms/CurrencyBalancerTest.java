@@ -57,10 +57,13 @@ public class CurrencyBalancerTest {
 		assertTrue(balancer.ifMaxDriftExceededOnAnyCurrency(0.2));
 
 		// Let's do the adjustments, then determine if the ratios are met.
-		for (OwnedAsset asset : ownedAssets) {
+		for (HoldingRatio ratio : ratios) {
+			OwnedAsset asset = balancer.getOwnedAsset(ratio.getTicker());
 			String assetName = asset.getAsset();
-			double adjustment = adjustments.get(assetName);
-			asset.setFree(asset.getFree() + adjustment);
+			Double adjustment = adjustments.get(assetName);
+			if (adjustment != null) {
+				asset.setFree(asset.getFree() + adjustment);
+			}
 		}
 		ownedAssets = balancer.getOwnedAssets();
 		System.out.println(ownedAssets);
