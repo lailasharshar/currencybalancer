@@ -111,7 +111,7 @@ public class BinanceAccountServices {
 	}
 
 	public NewOrderResponse createMarketOrder(String ticker, double amount, OrderSide orderSide) {
-		OrderHistory history = new OrderHistory().setAmount(amount).setSymbol(ticker).setStatus(orderSide.name());
+		OrderHistory history = new OrderHistory().setAmount(amount).setSymbol(ticker).setSide(orderSide.name()).setStatus(OrderStatus.NEW.name());
 		logger.info("Attempting to " + orderSide + " " + amount + " of " + ticker);
 		NewOrderResponse response = null;
 		try {

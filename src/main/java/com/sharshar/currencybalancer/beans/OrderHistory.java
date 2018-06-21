@@ -16,10 +16,11 @@ public class OrderHistory {
 	private String clientOrderId;
 	private long orderId;
 	private String symbol;
-	private String status;
+	private String side;
 	private long transactTime;
 	private Date createDtm;
 	private double amount;
+	private String status;
 
 	public long getTableId() {
 		return tableId;
@@ -57,12 +58,12 @@ public class OrderHistory {
 		return this;
 	}
 
-	public String getStatus() {
-		return status;
+	public String getSide() {
+		return side;
 	}
 
-	public OrderHistory setStatus(String status) {
-		this.status = status;
+	public OrderHistory setSide(String side) {
+		this.side = side;
 		return this;
 	}
 
@@ -90,6 +91,15 @@ public class OrderHistory {
 
 	public OrderHistory setAmount(double amount) {
 		this.amount = amount;
+		return this;
+	}
+
+	public String getStatus() {
+		return status;
+	}
+
+	public OrderHistory setStatus(String status) {
+		this.status = status;
 		return this;
 	}
 }

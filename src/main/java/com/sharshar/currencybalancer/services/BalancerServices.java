@@ -1,10 +1,16 @@
 package com.sharshar.currencybalancer.services;
 
+import com.binance.api.client.domain.OrderSide;
+import com.binance.api.client.domain.OrderStatus;
+import com.binance.api.client.domain.account.NewOrderResponse;
+import com.binance.api.client.domain.account.Order;
 import com.sharshar.currencybalancer.beans.HoldingRatio;
+import com.sharshar.currencybalancer.beans.OrderHistory;
 import com.sharshar.currencybalancer.beans.OwnedAsset;
-import com.sharshar.currencybalancer.beans.PriceData;
 import com.sharshar.currencybalancer.binance.BinanceAccountServices;
+import com.sharshar.currencybalancer.repository.OrderHistoryRepository;
 import com.sharshar.currencybalancer.repository.PriceDataHoldingRepository;
+import com.sharshar.currencybalancer.utils.ScratchException;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,6 +18,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Services to support balancing of currencies
@@ -24,6 +31,9 @@ public class BalancerServices {
 
 	@Autowired
 	private PriceDataHoldingRepository repository;
+
+	@Autowired
+	private OrderHistoryRepository orderHistoryRepository;
 
 	@Autowired
 	private BinanceAccountServices accountServices;
@@ -91,5 +101,54 @@ public class BalancerServices {
 			}
 		}
 		return itemsToDelete;
+	}
+
+	public List<OrderHistory> getNewOrders() {
+		return orderHistoryRepository.findByStatus(OrderStatus.NEW.name());
+	}
+
+	public List<Order> getOrderStatuses(List<OrderHistory> ordersHistories) {
+		List<Order> orders = new ArrayList<>();
+		for (OrderHistory oh : ordersHistories) {
+			orders.add(accountServices.checkOrderStatus(oh.getSymbol(), oh.getClientOrderId()));
+		}
+		return orders;
+	}
+
+	public void updateNewOrdersWithStatus() throws ScratchException {
+		try {
+			List<OrderHistory> orderHistories = getNewOrders();
+			List<Order> orders = getOrderStatuses(orderHistories);
+			List<OrderHistory> toSave = new ArrayList<>();
+			for (Order order : orders) {
+				OrderHistory oh = orderHistories.stream()
+						.filter(c -> c.getClientOrderId().equalsIgnoreCase(order.getClientOrderId()))
+						.findFirst().orElse(null);
+				if (oh != null) {
+					oh.setStatus(order.getStatus().name());
+					toSave.add(oh);
+				}
+			}
+			orderHistoryRepository.saveAll(toSave);
+		} catch (Exception ex) {
+			throw new ScratchException("Unable to udate status", ex);
+		}
+	}
+
+	public List<NewOrderResponse> createOrders(Map<String, Double> items) {
+		List<NewOrderResponse> orders = new ArrayList<>();
+		if (items == null || items.isEmpty()) {
+			return orders;
+		}
+		for (String ticker : items.keySet()) {
+			OrderSide os;
+			if (items.get(ticker) > 0) {
+				os = OrderSide.BUY;
+			} else {
+				os = OrderSide.SELL;
+			}
+			orders.add(accountServices.createMarketOrder(ticker, Math.abs(items.get(ticker)), os));
+		}
+		return orders;
 	}
 }

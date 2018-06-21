@@ -1,6 +1,8 @@
 package com.sharshar.currencybalancer.services;
 
+import com.binance.api.client.domain.account.Order;
 import com.sharshar.currencybalancer.beans.HoldingRatio;
+import com.sharshar.currencybalancer.beans.OrderHistory;
 import com.sharshar.currencybalancer.beans.OwnedAsset;
 import org.junit.Before;
 import org.junit.Ignore;
@@ -90,5 +92,15 @@ public class BalancerServicesTest {
 	@Ignore // We tested once, no reason bo blow away data and since it's the most obvious from the REST interface, ignore it.
 	public void testSaveNewRatios() {
 		List<HoldingRatio> savedRatios = services.saveNewRatios(newRatios);
+	}
+
+	@Test
+	public void testGetOrderStatus() throws Exception {
+		List<OrderHistory> histories = services.getNewOrders();
+		List<Order> statuses = services.getOrderStatuses(histories);
+		assertEquals(histories.size(), statuses.size());
+		services.updateNewOrdersWithStatus();
+		histories = services.getNewOrders();
+		assertEquals(0, histories.size());
 	}
 }

@@ -1,10 +1,10 @@
 package com.sharshar.currencybalancer.algorithms;
 
+import com.binance.api.client.domain.account.NewOrderResponse;
 import com.sharshar.currencybalancer.beans.HoldingRatio;
 import com.sharshar.currencybalancer.beans.OwnedAsset;
 import com.sharshar.currencybalancer.beans.PriceData;
 import com.sharshar.currencybalancer.binance.BinanceAccountServices;
-import com.sharshar.currencybalancer.repository.PriceDataHoldingRepository;
 import com.sharshar.currencybalancer.services.BalancerServices;
 import com.sharshar.currencybalancer.utils.ScratchException;
 import org.apache.logging.log4j.LogManager;
@@ -13,10 +13,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.PostConstruct;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 /**
  * Used to re-balance holdings based on values defined in the database
@@ -25,6 +25,7 @@ import java.util.stream.Collectors;
  */
 @Service
 public class CurrencyBalancer {
+
 	Logger logger = LogManager.getLogger();
 
 	@Autowired
@@ -42,14 +43,30 @@ public class CurrencyBalancer {
 	// The current price of all the tickers on Binance
 	private List<PriceData> currentPriceData;
 
-	public CurrencyBalancer() { }
-
 	public List<HoldingRatio> getDesiredHoldingRatios() {
 		return desiredHoldingRatios;
 	}
 
 	public List<OwnedAsset> getOwnedAssets() {
 		return ownedAssets;
+	}
+
+	public class CurrencyDrift {
+		private String ticker;
+		private double drift;
+
+		public CurrencyDrift(String ticker, double drift) {
+			this.ticker = ticker;
+			this.drift = drift;
+		}
+
+		public String getTicker() {
+			return ticker;
+		}
+
+		public double getDrift() {
+			return drift;
+		}
 	}
 
 	@PostConstruct
@@ -232,6 +249,20 @@ public class CurrencyBalancer {
 		return totalPercentDifference;
 	}
 
+	public List<CurrencyDrift> getDrifts() {
+		List<CurrencyDrift> drifts = new ArrayList<>();
+		Map<String, Double> adjustments = getAdjustments();
+		for (HoldingRatio ratio : desiredHoldingRatios) {
+			OwnedAsset asset = getOwnedAsset(ratio.getTicker());
+			Double adjustment = adjustments.get(asset.getAsset());
+			if (adjustment != null) {
+				double thisPercentDifference = adjustment / (asset.getFree() + asset.getLocked());
+				drifts.add(new CurrencyDrift(asset.getAsset(), thisPercentDifference));
+			}
+		}
+		return drifts;
+	}
+
 	public boolean ifMaxDriftExceededOnAnyCurrency(double driftPercent) {
 		Map<String, Double> adjustments = getAdjustments();
 		for (HoldingRatio ratio : desiredHoldingRatios) {
@@ -246,5 +277,39 @@ public class CurrencyBalancer {
 			}
 		}
 		return false;
+	}
+
+	public boolean shouldBalance(double minDrift, double minSingleDrift) {
+		if (minDrift > 0 && getDriftPercent() > minDrift) {
+			return true;
+		}
+		if (minSingleDrift > 0 && ifMaxDriftExceededOnAnyCurrency(minSingleDrift)) {
+			return true;
+		}
+		return false;
+	}
+
+	public List<NewOrderResponse> balance() {
+		List<NewOrderResponse> newOrders = new ArrayList<>();
+		Map<String, Double> adjustments = getAdjustments();
+		Map<String, Double> negativeAdjustments = new HashMap<>();
+		Map<String, Double> positiveAdjustments = new HashMap<>();
+
+		for (String ticker : adjustments.keySet()) {
+			double amount = adjustments.get(ticker);
+			if (amount != 0) {
+				if (amount > 0) {
+					positiveAdjustments.put(ticker, amount);
+				} else {
+					negativeAdjustments.put(ticker, amount);
+				}
+			}
+		}
+
+		// First sell
+		newOrders.addAll(services.createOrders(negativeAdjustments));
+		// Then buy
+		newOrders.addAll(services.createOrders(positiveAdjustments));
+		return newOrders;
 	}
 }
