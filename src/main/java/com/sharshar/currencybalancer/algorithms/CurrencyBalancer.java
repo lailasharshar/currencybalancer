@@ -26,7 +26,7 @@ import java.util.Map;
 @Service
 public class CurrencyBalancer {
 
-	Logger logger = LogManager.getLogger();
+	private static Logger logger = LogManager.getLogger();
 
 	@Autowired
 	BalancerServices services;
@@ -99,7 +99,7 @@ public class CurrencyBalancer {
 	 * @param totalAmount - The total amount in BTC of owned assets (to determine current ratio)
 	 * @return the amount to sell (negative) or buy (positive)
 	 */
-	public double getAdjustment(OwnedAsset ownedAsset, double desiredRatio, double currentPrice, double totalAmount) {
+	public static double getAdjustment(OwnedAsset ownedAsset, double desiredRatio, double currentPrice, double totalAmount) {
 		double totalOwnedValue = (ownedAsset.getFree() + ownedAsset.getLocked()) * currentPrice;
 		double totalDesiredValue = desiredRatio * totalAmount;
 		double totalAdjustedValue = totalDesiredValue - totalOwnedValue;
@@ -115,13 +115,19 @@ public class CurrencyBalancer {
 	 * @return the amount in the base currency
 	 */
 	public double getTotalValue(String baseCurrency) {
+		// reload price data, just to be current
+		this.currentPriceData = accountServices.getData();
+		return getTotalValue(this.ownedAssets, this.desiredHoldingRatios, this.currentPriceData, baseCurrency);
+	}
+
+	public static double getTotalValue(List<OwnedAsset> assets, List<HoldingRatio> ratios, List<PriceData> currentPriceData, String baseCurrency) {
 		if (!baseCurrency.equalsIgnoreCase("BTC")) {
 			// First convert to BTC, then convert back
-			double totalValueInBTC = getTotalValue("BTC");
-			// find the conversion from that currency from bitcoin
+			double totalValueInBTC = getTotalValue(assets, ratios, currentPriceData, "BTC");
 			if (baseCurrency.equalsIgnoreCase("USD")) {
 				baseCurrency = "USDT";
 			}
+			// find the conversion from that currency from bitcoin
 			final String correctedBaseCurrency = baseCurrency;
 			PriceData pd = currentPriceData.stream()
 					.filter(c -> c.getTicker().equalsIgnoreCase("BTC" + correctedBaseCurrency))
@@ -133,14 +139,12 @@ public class CurrencyBalancer {
 			return totalValueInBTC * pd.getPrice();
 		}
 
-		// reload price data, just to be current
-		this.currentPriceData = accountServices.getData();
 
 		double totalValue = 0;
 		// Only do the ones we want to manage
-		for (HoldingRatio ratio : desiredHoldingRatios) {
-			OwnedAsset asset = getOwnedAsset(ratio.getTicker());
-			totalValue += getValueOwned(asset, baseCurrency);
+		for (HoldingRatio ratio : ratios) {
+			OwnedAsset asset = getOwnedAsset(ratio.getTicker(), assets);
+			totalValue += getValueOwned(asset, currentPriceData, baseCurrency);
 		}
 		return totalValue;
 	}
@@ -153,15 +157,15 @@ public class CurrencyBalancer {
 	 * @param baseCurrency - the base currency to use to compare
 	 * @return the total value of the amount owned in the base currency
 	 */
-	public double getValueOwned(OwnedAsset ownedAsset, String baseCurrency) {
+	public static double getValueOwned(OwnedAsset ownedAsset, List<PriceData> priceData, String baseCurrency) {
 		// If this is the base currency, just return the number owned
 		if (ownedAsset.getAsset().equalsIgnoreCase(baseCurrency)) {
 			double value = ownedAsset.getFree() + ownedAsset.getLocked();
-			logger.info(ownedAsset.getAsset() + baseCurrency + " - qty: " + ownedAsset.getFree() + "/"
-					+ ownedAsset.getLocked() + " @ 1.0 = " + value);
+			//logger.info(ownedAsset.getAsset() + baseCurrency + " - qty: " + ownedAsset.getFree() + "/"
+			//		+ ownedAsset.getLocked() + " @ 1.0 = " + value);
 			return value;
 		}
-		PriceData data = this.currentPriceData.stream()
+		PriceData data = priceData.stream()
 				.filter(c -> c.getTicker().equalsIgnoreCase(ownedAsset.getAsset() + baseCurrency))
 				.findFirst().orElse(null);
 		if (data == null) {
@@ -169,9 +173,13 @@ public class CurrencyBalancer {
 			return 0.0;
 		}
 		double value = (ownedAsset.getFree() + ownedAsset.getLocked()) * data.getPrice();
-		logger.info(ownedAsset.getAsset() + baseCurrency + " - qty: " + ownedAsset.getFree() + "/"
-				+ ownedAsset.getLocked() + " @ " + data.getPrice() + " = " + value);
+		//logger.info(ownedAsset.getAsset() + baseCurrency + " - qty: " + ownedAsset.getFree() + "/"
+		//		+ ownedAsset.getLocked() + " @ " + data.getPrice() + " = " + value);
 		return value;
+	}
+
+	public Map<String, Double> getAdjustments() {
+		return getAdjustments(ownedAssets, desiredHoldingRatios, currentPriceData);
 	}
 
 	/**
@@ -180,19 +188,19 @@ public class CurrencyBalancer {
 	 *
 	 * @return the map of adjustments that need to be made to achieve the desired ratio
 	 */
-	public Map<String, Double> getAdjustments() {
+	public static Map<String, Double> getAdjustments(List<OwnedAsset> ownedAssets, List<HoldingRatio> ratios, List<PriceData> priceData) {
 		String baseCurrency = "BTC";
-		double totalValueOwned = getTotalValue(baseCurrency);
+		double totalValueOwned = getTotalValue(ownedAssets, ratios, priceData, baseCurrency);
 		Map<String, Double> adjustments = new HashMap<>();
-		for (HoldingRatio ratio : desiredHoldingRatios) {
+		for (HoldingRatio ratio : ratios) {
 			double desiredRatio = 0.0;
 			double currentPrice = 0.0;
-			OwnedAsset asset = getOwnedAsset(ratio.getTicker());
+			OwnedAsset asset = getOwnedAsset(ratio.getTicker(), ownedAssets);
 			if (ratio == null) {
 				continue;
 			}
 			desiredRatio = ratio.getPercent();
-			PriceData pd = getPriceData(asset.getAsset(), baseCurrency);
+			PriceData pd = getPriceData(priceData, asset.getAsset(), baseCurrency);
 			if (pd == null) {
 				if (asset.getAsset().equalsIgnoreCase(baseCurrency)) {
 					currentPrice = 1.0;
@@ -222,13 +230,21 @@ public class CurrencyBalancer {
 	}
 
 	public PriceData getPriceData(String ticker, String baseCurrency) {
-		return currentPriceData.stream()
+		return getPriceData(currentPriceData, ticker, baseCurrency);
+	}
+
+	public static PriceData getPriceData(List<PriceData> priceData, String ticker, String baseCurrency) {
+		return priceData.stream()
 				.filter(c -> c.getTicker().equalsIgnoreCase(ticker + baseCurrency))
 				.findFirst().orElse(null);
 	}
 
 	public OwnedAsset getOwnedAsset(String ticker) {
-		return ownedAssets.stream()
+		return getOwnedAsset(ticker, ownedAssets);
+	}
+
+	public static OwnedAsset getOwnedAsset(String ticker, List<OwnedAsset> assets) {
+		return assets.stream()
 				.filter(c -> c.getAsset().equalsIgnoreCase(ticker))
 				.findFirst().orElse(null);
 	}

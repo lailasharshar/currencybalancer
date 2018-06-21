@@ -1,31 +1,34 @@
 package com.sharshar.currencybalancer.beans;
 
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-
-import java.security.SecureRandom;
+import javax.persistence.*;
 import java.util.Date;
-import java.util.Random;
 
 /**
  * Bean for price data
  *
  * Created by lsharshar on 3/6/2018.
  */
+@Entity
+@Table(name="pricedata")
 public class PriceData {
-
-	private Logger logger = LogManager.getLogger();
-
-	private String ticker;
-
+	@Id
+	@GeneratedValue(strategy = GenerationType.IDENTITY)
+	private Long tableId;
 	private Double price;
-
-	//@Field(type = FieldType.Date, format = DateFormat.custom, pattern = "EEE MMM dd HH:mm:ss zzz yyyy")
 	private Date updateTime;
-
+	private String ticker;
 	private short exchange;
 
 	public PriceData() {
+	}
+
+	public Long getTableId() {
+		return tableId;
+	}
+
+	public PriceData setTableId(Long tableId) {
+		this.tableId = tableId;
+		return this;
 	}
 
 	public Double getPrice() {
